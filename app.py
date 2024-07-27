@@ -4,20 +4,26 @@ requirements.txt file contents:
 langchain==0.0.154 PyPDF2==3.0.1 python-dotenv==1.0.0 streamlit==1.18.1 faiss-cpu==1.7.4 streamlit-extras openai
 '''
  
- 
+import re
+# import PyPDF2
+import numpy as np
+from unidecode import unidecode
+from openai import OpenAI
 import streamlit as st
 from dotenv import load_dotenv
 import pickle
 from PyPDF2 import PdfReader
 from streamlit_extras.add_vertical_space import add_vertical_space
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
-from langchain.chains.question_answering import load_qa_chain
-from langchain.callbacks import get_openai_callback
+# from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain.embeddings.openai import OpenAIEmbeddings
+# from langchain.vectorstores import FAISS
+# from langchain.llms import OpenAI
+# from langchain.chains.question_answering import load_qa_chain
+# from langchain.callbacks import get_openai_callback
 import os
- 
+from tqdm import tqdm
+from sklearn.metrics.pairwise import cosine_similarity
+
 # Sidebar contents
 with st.sidebar:
     st.title('🤗💬 LLM Chat App')
@@ -38,55 +44,107 @@ def main():
     st.header("Chat with PDF 💬")
  
  
-    # upload a PDF file
-    pdf = st.file_uploader("Upload your PDF", type='pdf')
+    # # upload a PDF file
+    # pdf = st.file_uploader("Upload your PDF", type='pdf')
  
-    # st.write(pdf)
-    if pdf is not None:
-        pdf_reader = PdfReader(pdf)
+    # # st.write(pdf)
+    # if pdf is not None:
+    #     pdf_reader = PdfReader(pdf)
         
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+    #     text = ""
+    #     for page in pdf_reader.pages:
+    #         text += page.extract_text()
  
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            length_function=len
-            )
-        chunks = text_splitter.split_text(text=text)
+    #     text_splitter = RecursiveCharacterTextSplitter(
+    #         chunk_size=1000,
+    #         chunk_overlap=200,
+    #         length_function=len
+    #         )
+    #     chunks = text_splitter.split_text(text=text)
  
-        # # embeddings
-        store_name = pdf.name[:-4]
-        st.write(f'{store_name}')
-        # st.write(chunks)
+    #     # # embeddings
+    #     store_name = pdf.name[:-4]
+    #     st.write(f'{store_name}')
+    #     # st.write(chunks)
  
-        if os.path.exists(f"{store_name}.pkl"):
-            with open(f"{store_name}.pkl", "rb") as f:
-                VectorStore = pickle.load(f)
-            # st.write('Embeddings Loaded from the Disk')s
-        else:
-            embeddings = OpenAIEmbeddings()
-            VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
-            with open(f"{store_name}.pkl", "wb") as f:
-                pickle.dump(VectorStore, f)
+    #     if os.path.exists(f"{store_name}.pkl"):
+    #         with open(f"{store_name}.pkl", "rb") as f:
+    #             VectorStore = pickle.load(f)
+    #         # st.write('Embeddings Loaded from the Disk')s
+    #     else:
+    #         embeddings = OpenAIEmbeddings()
+    #         VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
+    #         with open(f"{store_name}.pkl", "wb") as f:
+    #             pickle.dump(VectorStore, f)
  
-        # embeddings = OpenAIEmbeddings()
-        # VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
+    #     # embeddings = OpenAIEmbeddings()
+    #     # VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
  
-        # Accept user questions/query
-        query = st.text_input("Ask questions about your PDF file:")
-        # st.write(query)
+    #     # Accept user questions/query
+    #     query = st.text_input("Ask questions about your PDF file:")
+    #     # st.write(query)
  
-        if query:
-            docs = VectorStore.similarity_search(query=query, k=3)
+    #     if query:
+    #         docs = VectorStore.similarity_search(query=query, k=3)
  
-            llm = OpenAI()
-            chain = load_qa_chain(llm=llm, chain_type="stuff")
-            with get_openai_callback() as cb:
-                response = chain.run(input_documents=docs, question=query)
-                print(cb)
-            st.write(response)
+    #         llm = OpenAI()
+    #         chain = load_qa_chain(llm=llm, chain_type="stuff")
+    #         with get_openai_callback() as cb:
+    #             response = chain.run(input_documents=docs, question=query)
+    #             print(cb)
+    #         st.write(response)
+    
+    #Setup PDF
+
+    
+
+
+    def cleaning(string):
+        return re.sub(r'[ ]+', ' ', unidecode(string).replace('\n', ' ')).strip()
+
+    def get_embedding(text, model="nomic-ai/nomic-embed-text-v1.5-GGUF"):
+        text = text.replace("\n", " ")
+        return client.embeddings.create(input = [text], model=model).data[0].embedding
+    
+    q = st.text_input("Ask questions about regarding Malaysia Security Comission")
+    if q:
+        pdf_reader = PdfReader('Docs\Capital Markets and Services (Amendment) Act 2015.pdf')
+        
+        client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+        v = get_embedding(cleaning(pdf_reader.pages[0].extract_text()))
+
+    
+        vs = []
+        for i in tqdm(range(len(pdf_reader.pages))):
+            c = cleaning(pdf_reader.pages[i].extract_text())
+            v = get_embedding(c)
+            vs.append(v)
+        vs_np = np.array(vs)
+        # q = 'What does Power of Commission to appoint statutory manager means? Explain in 50 words'
+        q_v = get_embedding(q)
+        score = cosine_similarity(vs_np, np.array([q_v]))[:,0]
+        c_best_doc = cleaning(pdf_reader.pages[int(np.argmax(score))].extract_text())
+        prompting = f'Text:  `{c_best_doc}`, \n\nBased on the text, act as Security Commissioner expert and answer the following question, `{q}`'
+
+        client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+
+        completion = client.chat.completions.create(
+        model="lmstudio-community/Phi-3.1-mini-4k-instruct-GGUF",
+        messages=[
+            #     {"role": "system", "content": "Always answer in rhymes."},
+                {"role": "user", "content": prompting}
+            ],
+            temperature=0.7,
+        )
+        st.write(completion.choices[0].message.content)
+        # docs = VectorStore.similarity_search(query=query, k=3)
+
+        # llm = OpenAI()
+        # chain = load_qa_chain(llm=llm, chain_type="stuff")
+        # with get_openai_callback() as cb:
+        #     response = chain.run(input_documents=docs, question=query)
+        #     print(cb)
+        # st.write(response)
  
 if __name__ == '__main__':
     main()
