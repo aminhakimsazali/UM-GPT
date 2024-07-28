@@ -5,6 +5,7 @@ langchain==0.0.154 PyPDF2==3.0.1 python-dotenv==1.0.0 streamlit==1.18.1 faiss-cp
 '''
  
 import re
+import pandas as pd
 # import PyPDF2
 import numpy as np
 from unidecode import unidecode
@@ -24,6 +25,9 @@ import os
 from tqdm import tqdm
 from sklearn.metrics.pairwise import cosine_similarity
 import streamlit as st
+import pickle
+
+
 
 
 # Sidebar contents
@@ -48,15 +52,15 @@ def main():
     def generateAnswerLLM(q):
         
         vs = []
-        for i in tqdm(range(len(pdf_reader.pages))):
-            c = cleaning(pdf_reader.pages[i].extract_text())
-            v = get_embedding(c)
-            vs.append(v)
-        vs_np = np.array(vs)
-        # q = 'What does Power of Commission to appoint statutory manager means? Explain in 50 words'
+        # Load variables from the file
+        with open('vs_np.pickle', 'rb') as f:
+            vs_np = pickle.load(f)
+        
+        PDFInALL_df = pd.read_pickle('PDFInALL_df.pickle')
+
         q_v = get_embedding(q)
         score = cosine_similarity(vs_np, np.array([q_v]))[:,0]
-        c_best_doc = cleaning(pdf_reader.pages[int(np.argmax(score))].extract_text())
+        c_best_doc = PDFInALL_df.iloc[int(np.argmax(score))]['Text']        
         prompting = f'Text:  `{c_best_doc}`, \n\nBased on the text, act as Security Commissioner expert and answer the following question, `{q}`'
 
         completion = client.chat.completions.create(
@@ -68,7 +72,10 @@ def main():
             temperature=0.7,
         )
         # st.write(completion.choices[0].message.content)
-        return completion.choices[0].message.content
+        answer = completion.choices[0].message.content
+
+        answer  += f"\n\n Reference : {PDFInALL_df.iloc[int(np.argmax(score))]['Links']}"
+        return answer
 
 
     def cleaning(string):
@@ -78,9 +85,7 @@ def main():
         text = text.replace("\n", " ")
         return client.embeddings.create(input = [text], model=model).data[0].embedding
     
-    pdf_reader = PdfReader('Docs\Capital Markets and Services (Amendment) Act 2015.pdf')
-    client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
-    v = get_embedding(cleaning(pdf_reader.pages[0].extract_text()))
+    client = OpenAI(base_url="http://192.168.0.117:1234/v1", api_key="lm-studio")
     st.header("SC-GPT : Ask anything related to Securities Commission Malaysia regulations. ")  
     with st.expander("Disclaimer"):
         st.write("""Due to limited time and agile, this work limited to Regulatory FAQ provided by Malaysia SC.\n
@@ -107,8 +112,8 @@ def main():
         
         # Display assistant response in chat message container
         with st.chat_message("assistant"):
-            response = f"Echo: {prompt}"
-            # response = generateAnswerLLM(prompt)
+            # response = f"Echo: {prompt}"
+            response = generateAnswerLLM(prompt)
             st.markdown(response)
         # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
