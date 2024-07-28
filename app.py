@@ -23,97 +23,30 @@ from streamlit_extras.add_vertical_space import add_vertical_space
 import os
 from tqdm import tqdm
 from sklearn.metrics.pairwise import cosine_similarity
+import streamlit as st
+
 
 # Sidebar contents
 with st.sidebar:
-    st.title('🤗💬 LLM Chat App')
+    st.title('SC-GPT 🤖')
     st.markdown('''
-    ## About
+    ## Weekend project by Amin Hakim (SC-GPT)
     This app is an LLM-powered chatbot built using:
-    - [Streamlit](https://streamlit.io/)
-    - [LangChain](https://python.langchain.com/)
-    - [OpenAI](https://platform.openai.com/docs/models) LLM model
- 
+    - [Streamlit](https://streamlit.io/) as Frontend
+    - [LLMStudios](https://lmstudio.ai/) as LLM-Backend
     ''')
     add_vertical_space(5)
-    st.write('Made with ❤️ by [Prompt Engineer](https://youtube.com/@engineerprompt)')
+    st.write('')
  
 load_dotenv()
+
+
  
 def main():
-    st.header("Chat with PDF 💬")
- 
- 
-    # # upload a PDF file
-    # pdf = st.file_uploader("Upload your PDF", type='pdf')
- 
-    # # st.write(pdf)
-    # if pdf is not None:
-    #     pdf_reader = PdfReader(pdf)
+
+
+    def generateAnswerLLM(q):
         
-    #     text = ""
-    #     for page in pdf_reader.pages:
-    #         text += page.extract_text()
- 
-    #     text_splitter = RecursiveCharacterTextSplitter(
-    #         chunk_size=1000,
-    #         chunk_overlap=200,
-    #         length_function=len
-    #         )
-    #     chunks = text_splitter.split_text(text=text)
- 
-    #     # # embeddings
-    #     store_name = pdf.name[:-4]
-    #     st.write(f'{store_name}')
-    #     # st.write(chunks)
- 
-    #     if os.path.exists(f"{store_name}.pkl"):
-    #         with open(f"{store_name}.pkl", "rb") as f:
-    #             VectorStore = pickle.load(f)
-    #         # st.write('Embeddings Loaded from the Disk')s
-    #     else:
-    #         embeddings = OpenAIEmbeddings()
-    #         VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
-    #         with open(f"{store_name}.pkl", "wb") as f:
-    #             pickle.dump(VectorStore, f)
- 
-    #     # embeddings = OpenAIEmbeddings()
-    #     # VectorStore = FAISS.from_texts(chunks, embedding=embeddings)
- 
-    #     # Accept user questions/query
-    #     query = st.text_input("Ask questions about your PDF file:")
-    #     # st.write(query)
- 
-    #     if query:
-    #         docs = VectorStore.similarity_search(query=query, k=3)
- 
-    #         llm = OpenAI()
-    #         chain = load_qa_chain(llm=llm, chain_type="stuff")
-    #         with get_openai_callback() as cb:
-    #             response = chain.run(input_documents=docs, question=query)
-    #             print(cb)
-    #         st.write(response)
-    
-    #Setup PDF
-
-    
-
-
-    def cleaning(string):
-        return re.sub(r'[ ]+', ' ', unidecode(string).replace('\n', ' ')).strip()
-
-    def get_embedding(text, model="nomic-ai/nomic-embed-text-v1.5-GGUF"):
-        text = text.replace("\n", " ")
-        return client.embeddings.create(input = [text], model=model).data[0].embedding
-    
-    q = st.text_input("Ask questions about regarding Malaysia Security Comission")
-    if q:
-        pdf_reader = PdfReader('Docs\Capital Markets and Services (Amendment) Act 2015.pdf')
-        
-        client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
-        v = get_embedding(cleaning(pdf_reader.pages[0].extract_text()))
-
-    
         vs = []
         for i in tqdm(range(len(pdf_reader.pages))):
             c = cleaning(pdf_reader.pages[i].extract_text())
@@ -126,8 +59,6 @@ def main():
         c_best_doc = cleaning(pdf_reader.pages[int(np.argmax(score))].extract_text())
         prompting = f'Text:  `{c_best_doc}`, \n\nBased on the text, act as Security Commissioner expert and answer the following question, `{q}`'
 
-        client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
-
         completion = client.chat.completions.create(
         model="lmstudio-community/Phi-3.1-mini-4k-instruct-GGUF",
         messages=[
@@ -136,15 +67,54 @@ def main():
             ],
             temperature=0.7,
         )
-        st.write(completion.choices[0].message.content)
-        # docs = VectorStore.similarity_search(query=query, k=3)
+        # st.write(completion.choices[0].message.content)
+        return completion.choices[0].message.content
 
-        # llm = OpenAI()
-        # chain = load_qa_chain(llm=llm, chain_type="stuff")
-        # with get_openai_callback() as cb:
-        #     response = chain.run(input_documents=docs, question=query)
-        #     print(cb)
-        # st.write(response)
+
+    def cleaning(string):
+        return re.sub(r'[ ]+', ' ', unidecode(string).replace('\n', ' ')).strip()
+
+    def get_embedding(text, model="nomic-ai/nomic-embed-text-v1.5-GGUF"):
+        text = text.replace("\n", " ")
+        return client.embeddings.create(input = [text], model=model).data[0].embedding
+    
+    pdf_reader = PdfReader('Docs\Capital Markets and Services (Amendment) Act 2015.pdf')
+    client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+    v = get_embedding(cleaning(pdf_reader.pages[0].extract_text()))
+    st.header("SC-GPT : Ask anything related to Securities Commission Malaysia regulations. ")  
+    with st.expander("Disclaimer"):
+        st.write("""Due to limited time and agile, this work limited to Regulatory FAQ provided by Malaysia SC.\n
+        The documents that powered the LLM knowledge is accesible at 
+        https://www.sc.com.my/regulation/regulatory-faqs
+        """)
+
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    # React to user input
+    if prompt := st.chat_input("What is up?"):
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            response = f"Echo: {prompt}"
+            # response = generateAnswerLLM(prompt)
+            st.markdown(response)
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+    print(st.session_state.messages)
+
  
 if __name__ == '__main__':
     main()
